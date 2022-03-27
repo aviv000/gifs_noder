@@ -1,5 +1,6 @@
 import re
 import io
+import random
 import requests
 from PIL import Image
 
@@ -22,8 +23,8 @@ class BaseImageExtractor:
 
     def init_images_metadata(self):
         image_urls = self.get_image_urls()
-
-        self.images_metadata["found"] = len(image_urls) + 1
+        random_color = lambda: random.randint(0,255)
+        self.images_metadata["found"] = len(image_urls)
 
         image_names = self.get_image_names(image_urls)
 
@@ -40,11 +41,11 @@ class BaseImageExtractor:
                 "domainWhitelist": [],
                 "gatekeeper": 0,
                 "hasTransparency": False,
-                "frameRate" : file_data["fps"],
+                "frameRate": float(file_data["fps"]),
                 "posterUrl": image_url,
                 "sitename": "",
                 "mobilePosterUrl": image_url,
-                "webmSize": 3865539,
+                "webmSize": file_data["size"],
                 "mobileUrl": image_url,
                 "gfyName": image_name,
                 "views": 0,
@@ -56,7 +57,7 @@ class BaseImageExtractor:
                 "extraLemmas": "",
                 "nsfw": "0",
                 "languageText2": "",
-                "avgColor": "#E8E8E9",
+                "avgColor": '#%02X%02X%02X' % (random_color(),random_color(),random_color()),
                 "dislikes": 0,
                 "published": 1,
                 "miniUrl": image_url,
@@ -72,10 +73,9 @@ class BaseImageExtractor:
                 "curated": 0,
                 "miniPosterUrl": image_url,
                 "width": file_data["width"],
-                "mp4Size": 0,
+                "mp4Size": file_data["size"],
                 "languageCategories": "",
                 "mp4Url": image_url,
-                "md5": "",
                 "content_urls": {
                     "largeGif": {
                         "url": image_url,
@@ -83,6 +83,66 @@ class BaseImageExtractor:
                         "height": file_data["height"],
                         "width": file_data["width"]
                     },
+                    "max2mbGif": {
+                        "url": image_url,
+                        "size": file_data["size"],
+                        "height": file_data["height"],
+                        "width": file_data["width"]
+                    },
+                    "webp": {
+                        "url": image_url,
+                        "size": file_data["size"],
+                        "height": file_data["height"],
+                        "width": file_data["width"]
+                    },
+                    "max1mbGif": {
+                        "url": image_url,
+                        "size": file_data["size"],
+                        "height": file_data["height"],
+                        "width": file_data["width"]
+                    },
+                    "100pxGif": {
+                        "url": image_url,
+                        "size": file_data["size"],
+                        "height": file_data["height"],
+                        "width": file_data["width"]
+                    },
+                    "mobilePoster": {
+                        "url": image_url,
+                        "size": file_data["size"],
+                        "height": file_data["height"],
+                        "width": file_data["width"]
+                    },
+                    "mp4": {
+                        "url": image_url,
+                        "size": file_data["size"],
+                        "height": file_data["height"],
+                        "width": file_data["width"]
+                    },
+                    "webm": {
+                        "url": image_url,
+                        "size": file_data["size"],
+                        "height": file_data["height"],
+                        "width": file_data["width"]
+                    },
+                    "max5mbGif": {
+                        "url": image_url,
+                        "size": file_data["size"],
+                        "height": file_data["height"],
+                        "width": file_data["width"]
+                    },
+                    "largeGif": {
+                        "url": image_url,
+                        "size": file_data["size"],
+                        "height": file_data["height"],
+                        "width": file_data["width"]
+                    },
+                    "mobile": {
+                        "url": image_url,
+                        "size": file_data["size"],
+                        "height": file_data["height"],
+                        "width": file_data["width"]
+                    }
                 }
             })
 
@@ -107,7 +167,7 @@ class BaseImageExtractor:
         del image_bytes
         del image_obj
 
-        return {"size": image_size_bytes, "width": width, "height": height, "fps" : fps, "frames": frames}
+        return {"size": image_size_bytes, "width": width, "height": height, "fps": fps, "frames": frames}
 
     @staticmethod
     def get_avg_fps_and_frames(PIL_Image_object):
