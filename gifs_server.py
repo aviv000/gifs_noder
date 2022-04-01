@@ -4,18 +4,18 @@ import sys
 import json
 from gevent.pywsgi import WSGIServer
 from flask import send_file, Flask, request
-from image_bb_extractor import ImageBBExtractor
+from image_extractor import ImageExtractor
 from consts import *
 
-
+IMAGES_PATH = "images"
 
 app = Flask("Mock GIFS")
 
-extractor = ImageBBExtractor(url="https://shekkerk.imgbb.com/")
+extractor = ImageExtractor(images_path=IMAGES_PATH, images_url_base=f"{BASE_URL}{ROUTE_IMAGES}")
 
 @app.route('/v1/oauth/token', methods=['OPTIONS'])
 def oauth():
-    return json.dumps({"token_type": "bearer", "scope": "", "expires_in": sys.maxsize, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2NDgxNDE3NjgsImlzcyI6IjJfS3RIX1c1Iiwicm9sZXMiOlsiQ29udGVudF9SZWFkZXIiXX0.HZhwK9ajbxqU7pwGUxrzqSFVcQakb4w4S0NL2aqxHOc"})
+    return json.dumps({"token_type": "bearer", "scope": "", "expires_in": 1, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2NDgxNDE3NjgsImlzcyI6IjJfS3RIX1c1Iiwicm9sZXMiOlsiQ29udGVudF9SZWFkZXIiXX0.HZhwK9ajbxqU7pwGUxrzqSFVcQakb4w4S0NL2aqxHOc"})
 
 
 def compose_response(response_content):
@@ -39,10 +39,12 @@ def categories():
 
 @app.route('/v1/gfycats/search', methods=['OPTIONS', 'GET'])
 def search():
-    return compose_response(extractor.images_metadata)
+    return compose_response(extractor.filter_out_gifs(request.args.get("search_text")))
 
+@app.route('/v1/images/<filename>', methods=['GET'])
+def images(filename):
+    return send_file(f"{IMAGES_PATH}/{filename}", mimetype='image/gif')
 
-http_server = WSGIServer(
-    (HOST, PORT), app, keyfile='../../certs/gfycat.key', certfile='../../certs/gfycat.crt')
+http_server = WSGIServer((HOST, PORT), app)
 
 http_server.serve_forever()

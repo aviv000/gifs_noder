@@ -1,6 +1,7 @@
 import re
 import io
 import random
+import pathlib
 import requests
 from PIL import Image
 
@@ -13,23 +14,26 @@ User should be public to extract
 IMAGE_NAMES_EXTRACT_REGEX = r"(/((\w)+(\-?))+)+\.(gif)"
 
 
-class BaseImageExtractor:
-    def __init__(self, images_server_url):
-        self.images_server_url = images_server_url
+class ImageExtractor:
+    def __init__(self, images_path, images_url_base):
+        self.images_path = images_path
         self.categories_metadata = {"cursor": "dummy", "gfycats": []}
         self.images_metadata = {"cursor": "dummy", "gfycats": []}
+        self.images_url_base = images_url_base
+        self.images = []
+        self.image_names = []
 
         self.init_images_metadata()
 
     def init_images_metadata(self):
-        image_urls = self.get_image_urls()
+        self.images = [str(path) for path in pathlib.Path(self.images_path).resolve().glob("**/*") if re.match(IMAGE_NAMES_EXTRACT_REGEX , str(path))]
+        self.image_names = [re.search(IMAGE_NAMES_EXTRACT_REGEX, path).group(1)[1:] for path in self.images]
         random_color = lambda: random.randint(0,255)
-        self.images_metadata["found"] = len(image_urls)
+        self.images_metadata["found"] = len(self.images)
 
-        image_names = self.get_image_names(image_urls)
-
-        for id, (image_name, image_url) in enumerate(zip(image_names, image_urls)):
-            file_data = BaseImageExtractor.get_image_file_data(image_url)
+        for id, (image_name, image_path) in enumerate(zip(self.image_names, self.images)):
+            image_url = f"{self.images_url_base}/{image_path.split('/')[-1]}"
+            file_data = ImageExtractor.get_image_file_data(image_path)
             self.images_metadata["gfycats"].append({
                 "max5mbGif": image_url,
                 "max2mbGif": image_url,
@@ -37,7 +41,7 @@ class BaseImageExtractor:
                 "description": "",
                 "webpUrl": image_url,
                 "source": 1,
-                "title": "",
+                "title": image_name,
                 "domainWhitelist": [],
                 "gatekeeper": 0,
                 "hasTransparency": False,
@@ -131,12 +135,6 @@ class BaseImageExtractor:
                         "height": file_data["height"],
                         "width": file_data["width"]
                     },
-                    "largeGif": {
-                        "url": image_url,
-                        "size": file_data["size"],
-                        "height": file_data["height"],
-                        "width": file_data["width"]
-                    },
                     "mobile": {
                         "url": image_url,
                         "size": file_data["size"],
@@ -145,48 +143,43 @@ class BaseImageExtractor:
                     }
                 }
             })
+    
+    def filter_out_gifs(self, search):
+        gifs_copy = self.images_metadata.copy()
+        for index, gfycat in enumerate(self.images_metadata["gfycats"]):
+            if search not in gfycat["title"]:
+                gifs_copy["gfycats"].pop(index)
+                gifs_copy["found"] -= 1
+        return gifs_copy
 
-    def get_images_server_content(self):
-        return requests.get(url=self.images_server_url).content.decode()
 
     @staticmethod
-    def download_image(image_url):
-        downloaded_image = requests.get(image_url, stream=True)
-        downloaded_image.raw.decode_content = True
-        return downloaded_image.content
-
-    @staticmethod
-    def get_image_file_data(image_url):
-        image_bytes = BaseImageExtractor.download_image(image_url)
+    def get_image_file_data(image_path):
+        image_fp = open(image_path, "rb")
+        image_bytes = image_fp.read()
         image_size_bytes = len(image_bytes)
-        image_obj = Image.open(io.BytesIO(image_bytes))
-        frames, fps = BaseImageExtractor.get_avg_fps_and_frames(image_obj)
-        width = image_obj.width
-        height = image_obj.height
+        image_object = Image.open(io.BytesIO(image_bytes))
+        frames, fps = ImageExtractor.get_avg_fps_and_frames(image_object)
+        width = image_object.width
+        height = image_object.height
 
-        del image_bytes
-        del image_obj
+        del image_fp
+        del image_object
 
         return {"size": image_size_bytes, "width": width, "height": height, "fps": fps, "frames": frames}
 
     @staticmethod
-    def get_avg_fps_and_frames(PIL_Image_object):
+    def get_avg_fps_and_frames(image_object):
         """ Returns the average framerate of a PIL Image object """
-        PIL_Image_object.seek(0)
+        image_object.seek(0)
         frames = duration = 0
         while True:
             try:
                 frames += 1
-                duration += PIL_Image_object.info['duration']
-                PIL_Image_object.seek(PIL_Image_object.tell() + 1)
+                duration += image_object.info['duration']
+                image_object.seek(image_object.tell() + 1)
             except Exception:
                 try:
                     return frames, frames / duration * 1000
                 except ZeroDivisionError:
                     return frames, 0
-
-    def get_image_urls(self):
-        pass
-
-    def get_image_names(self, urls):
-        pass
