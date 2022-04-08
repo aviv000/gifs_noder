@@ -1,47 +1,49 @@
-import re
 import io
-import random
-import pathlib
-import requests
+import json
 from PIL import Image
+from pathlib import Path
+from random import randint
+from subprocess import Popen, PIPE
+from re import search
 
+from consts import *
 
-"""
-Meant to extract images from websites, probably from a user's profile
-User should be public to extract
-"""
-
-IMAGE_NAMES_EXTRACT_REGEX = r"(/((\w)+(\-?))+)+\.(gif)"
-
+GIF_SIMPLE_REGEX = fr"(.*).{GIF_EXTENSION}"
 
 class ImageExtractor:
     def __init__(self, images_path, images_url_base):
         self.images_path = images_path
-        self.categories_metadata = {"cursor": "dummy", "gfycats": []}
+        self.categories_metadata = {"cursor": "dummy", "tags": []}
         self.images_metadata = {"cursor": "dummy", "gfycats": []}
         self.images_url_base = images_url_base
         self.images = []
         self.image_names = []
 
-        self.init_images_metadata()
+        self.init_metadata()
 
-    def init_images_metadata(self):
-        self.images = [str(path) for path in pathlib.Path(self.images_path).resolve().glob("**/*") if re.match(IMAGE_NAMES_EXTRACT_REGEX , str(path))]
-        self.image_names = [re.search(IMAGE_NAMES_EXTRACT_REGEX, path).group(1)[1:] for path in self.images]
-        random_color = lambda: random.randint(0,255)
+    def init_metadata(self):
+        # This requires for every image to have a tags file
+        files_without_extension = [search(GIF_SIMPLE_REGEX, file).group(1) for file in Popen(f"find . -type f -name *.{GIF_EXTENSION}".split(" "), stdout=PIPE).communicate()[0].decode().split("\n") if file]
+        self.images = dict(zip(
+            [f"{file}.{GIF_EXTENSION}" for file in files_without_extension],
+            [json.load(open(tag_file)) if tag_file else [] for tag_file in [f"{file}.{TAGS_EXTENSION}" for file in files_without_extension]]
+        ))
+
+        self.image_names = ['/'.join(path.split("/")[-2:]) for path in self.images.keys()]
         self.images_metadata["found"] = len(self.images)
 
-        for id, (image_name, image_path) in enumerate(zip(self.image_names, self.images)):
-            image_url = f"{self.images_url_base}/{image_path.split('/')[-1]}"
+        for id, (image_name, image_path) in enumerate(zip(self.image_names, self.images.keys())):
+            if not image_path: continue
+            image_url = f"{self.images_url_base}/{image_name}"
             file_data = ImageExtractor.get_image_file_data(image_path)
-            self.images_metadata["gfycats"].append({
+            gfycat = {
                 "max5mbGif": image_url,
                 "max2mbGif": image_url,
                 "rating": "R",
                 "description": "",
                 "webpUrl": image_url,
                 "source": 1,
-                "title": image_name,
+                "title": image_name.split("/")[-1],
                 "domainWhitelist": [],
                 "gatekeeper": 0,
                 "hasTransparency": False,
@@ -51,17 +53,17 @@ class ImageExtractor:
                 "mobilePosterUrl": image_url,
                 "webmSize": file_data["size"],
                 "mobileUrl": image_url,
-                "gfyName": image_name,
+                "gfyName": image_name.split("/")[-1],
                 "views": 0,
                 "likes": 0,
                 "height": file_data["height"],
-                "createDate": 1562142243,
+                "createDate": 0,
                 "webmUrl": image_url,
                 "hasAudio": False,
                 "extraLemmas": "",
                 "nsfw": "0",
                 "languageText2": "",
-                "avgColor": '#%02X%02X%02X' % (random_color(),random_color(),random_color()),
+                "avgColor": '#%02X%02X%02X' % (self.random_color(), self.random_color(), self.random_color()),
                 "dislikes": 0,
                 "published": 1,
                 "miniUrl": image_url,
@@ -70,7 +72,7 @@ class ImageExtractor:
                 "thumb100PosterUrl": image_url,
                 "max1mbGif": image_url,
                 "gfyId": id,
-                "tags": "",
+                "tags": self.images[image_path],
                 "gifUrl": image_url,
                 "gfyNumber": id,
                 "numFrames": file_data["frames"],
@@ -142,16 +144,15 @@ class ImageExtractor:
                         "width": file_data["width"]
                     }
                 }
-            })
+            }
+            self.images_metadata["gfycats"].append(gfycat)
+            for tag in self.images[image_path]:
+                if not next((item for item in self.categories_metadata["tags"] if item and item["tag"] == tag), None):
+                    self.categories_metadata["tags"].append({"cursor" : "dummy", "gfycats" : [gfycat] , "tag" : tag , "tagText": tag})
+                    break
     
-    def filter_out_gifs(self, search):
-        gifs_copy = self.images_metadata.copy()
-        for index, gfycat in enumerate(self.images_metadata["gfycats"]):
-            if search not in gfycat["title"]:
-                gifs_copy["gfycats"].pop(index)
-                gifs_copy["found"] -= 1
-        return gifs_copy
-
+    def search_gifs(self, search_text):
+        return {"cursor": "dummy", "gfycats": [gfycat for gfycat in self.images_metadata["gfycats"] if any(search_text in text for text in gfycat["tags"]) or search_text in gfycat["title"]]}
 
     @staticmethod
     def get_image_file_data(image_path):
@@ -169,8 +170,11 @@ class ImageExtractor:
         return {"size": image_size_bytes, "width": width, "height": height, "fps": fps, "frames": frames}
 
     @staticmethod
+    def random_color():
+        return randint(0,255)
+
+    @staticmethod
     def get_avg_fps_and_frames(image_object):
-        """ Returns the average framerate of a PIL Image object """
         image_object.seek(0)
         frames = duration = 0
         while True:

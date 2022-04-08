@@ -1,12 +1,8 @@
-from nis import cat
 import requests
 import json
 import pathlib
-import time
-from threading import Thread, Lock
+from threading import Thread
 
-
-error_lock = Lock()
 class GifsDownloader:
     def __init__(self, gifs_per_category : int) -> None:
         headers = {
@@ -39,7 +35,7 @@ class GifsDownloader:
             response = requests.get('https://api.gfycat.com/v1/reactions/populated',
                                     headers=self.header, params=params)
             for gif_data in response.json()["gfycats"]:
-                threads.append(Thread(target=self.download_gif,args=(gif_data,category,)))
+                threads.append(Thread(target=self.download_gif,args=(gif_data,category,), daemon=True))
         
         for thread in threads:
             thread.start()
@@ -53,11 +49,6 @@ class GifsDownloader:
                 gif_file.write(response.content)
             with open(f"categories/{gif_category}/{gif_data['gfyName']}.tags", "w") as tags_file:
                 tags_file.write(json.dumps(gif_data["tags"]))
-        else:
-            print(gif_category)
-            with error_lock:
-                with open("error_gifs", "a+") as error_files:
-                    error_files.write(f"{gif_url}\n")
 
 def main():
     downloader = GifsDownloader(gifs_per_category=256)

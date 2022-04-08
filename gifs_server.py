@@ -7,7 +7,7 @@ from flask import send_file, Flask, request
 from image_extractor import ImageExtractor
 from consts import *
 
-IMAGES_PATH = "images"
+IMAGES_PATH = "categories"
 
 app = Flask("Mock GIFS")
 
@@ -34,16 +34,16 @@ def compose_response(response_content):
 
 @app.route('/v1/reactions/populated', methods=['OPTIONS', 'GET'])
 def categories():
-    return compose_response(json.load(open("categories.json")))
+    return compose_response(extractor.categories_metadata)
 
 
 @app.route('/v1/gfycats/search', methods=['OPTIONS', 'GET'])
 def search():
-    return compose_response(extractor.filter_out_gifs(request.args.get("search_text")))
+    return compose_response(extractor.search_gifs(request.args.get("search_text")))
 
-@app.route('/v1/images/<filename>', methods=['GET'])
-def images(filename):
-    return send_file(f"{IMAGES_PATH}/{filename}", mimetype='image/gif')
+@app.route('/v1/images/<category>/<filename>', methods=['GET'])
+def images(category, filename):
+    return send_file(f"{IMAGES_PATH}/{category}/{filename}", mimetype='image/gif')
 
 http_server = WSGIServer((HOST, PORT), app)
 
