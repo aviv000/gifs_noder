@@ -1,14 +1,51 @@
 import io
 import json
 from PIL import Image
+from re import search
 from pathlib import Path
 from random import randint
 from subprocess import Popen, PIPE
-from re import search
-
+from sqlalchemy import create_engine
+import sqlalchemy
+from sqlalchemy.orm import sessionmaker
+import sqlalchemy.ext.declarative as sqldcl
+from sqlalchemy import Column, Integer, MetaData, VARCHAR, literal
 from consts import *
 
 GIF_SIMPLE_REGEX = fr"(.*).{GIF_EXTENSION}"
+
+engine = create_engine(f'sqlite:///{DATABASE_FILE}', echo=True)
+Base = sqldcl.declarative_base()
+
+class Images(Base):
+    __tablename__ = 'images'
+    id = Column(Integer, primary_key=True)
+    image_path = Column(VARCHAR)
+    image_name = Column(VARCHAR)
+    image_title = Column(VARCHAR)
+    json_dump = Column(VARCHAR)
+    tag_names = Column(VARCHAR)
+
+
+    def __repr__(self):
+        return "<Image(image_path='%s', image_name='%s', image_title='%s', json_dump='%s', tag_names='%s')>" % (self.image_path, self.image_name, self.image_title, self.json_dump, self.tag_names)
+
+
+class Tags(Base):
+    __tablename__ = 'tags'
+    id = Column(Integer, primary_key=True)
+    tag_name = Column(VARCHAR)
+    json_dump = Column(VARCHAR)
+
+    def __repr__(self):
+        return "<Tag(tag_name='%s', json_dump='%s')>" % (self.tag_name, self.json_dump)
+
+Base.metadata.create_all(engine)
+
+images_table = Base.metadata.tables['images']
+session_maker = sessionmaker(bind=engine)
+
+session = session_maker()
 
 class ImageExtractor:
     def __init__(self, images_path, images_url_base):
@@ -33,9 +70,11 @@ class ImageExtractor:
         self.images_metadata["found"] = len(self.images)
 
         for id, (image_name, image_path) in enumerate(zip(self.image_names, self.images.keys())):
+            if session.query(Images).filter_by(image_path=image_path).first(): continue
             if not image_path: continue
             image_url = f"{self.images_url_base}/{image_name}"
             file_data = ImageExtractor.get_image_file_data(image_path)
+            title = image_name.split("/")[-1]
             gfycat = {
                 "max5mbGif": image_url,
                 "max2mbGif": image_url,
@@ -43,7 +82,7 @@ class ImageExtractor:
                 "description": "",
                 "webpUrl": image_url,
                 "source": 1,
-                "title": image_name.split("/")[-1],
+                "title": title,
                 "domainWhitelist": [],
                 "gatekeeper": 0,
                 "hasTransparency": False,
@@ -89,70 +128,34 @@ class ImageExtractor:
                         "height": file_data["height"],
                         "width": file_data["width"]
                     },
-                    "max2mbGif": {
-                        "url": image_url,
-                        "size": file_data["size"],
-                        "height": file_data["height"],
-                        "width": file_data["width"]
-                    },
-                    "webp": {
-                        "url": image_url,
-                        "size": file_data["size"],
-                        "height": file_data["height"],
-                        "width": file_data["width"]
-                    },
-                    "max1mbGif": {
-                        "url": image_url,
-                        "size": file_data["size"],
-                        "height": file_data["height"],
-                        "width": file_data["width"]
-                    },
-                    "100pxGif": {
-                        "url": image_url,
-                        "size": file_data["size"],
-                        "height": file_data["height"],
-                        "width": file_data["width"]
-                    },
-                    "mobilePoster": {
-                        "url": image_url,
-                        "size": file_data["size"],
-                        "height": file_data["height"],
-                        "width": file_data["width"]
-                    },
-                    "mp4": {
-                        "url": image_url,
-                        "size": file_data["size"],
-                        "height": file_data["height"],
-                        "width": file_data["width"]
-                    },
-                    "webm": {
-                        "url": image_url,
-                        "size": file_data["size"],
-                        "height": file_data["height"],
-                        "width": file_data["width"]
-                    },
-                    "max5mbGif": {
-                        "url": image_url,
-                        "size": file_data["size"],
-                        "height": file_data["height"],
-                        "width": file_data["width"]
-                    },
-                    "mobile": {
-                        "url": image_url,
-                        "size": file_data["size"],
-                        "height": file_data["height"],
-                        "width": file_data["width"]
-                    }
                 }
             }
-            self.images_metadata["gfycats"].append(gfycat)
+            session.add(Images(image_path=image_path, image_name=image_name, image_title=title ,json_dump=json.dumps(gfycat), tag_names=','.join(self.images[image_path])))
+            session.commit()
             for tag in self.images[image_path]:
-                if not next((item for item in self.categories_metadata["tags"] if item and item["tag"] == tag), None):
-                    self.categories_metadata["tags"].append({"cursor" : "dummy", "gfycats" : [gfycat] , "tag" : tag , "tagText": tag})
+                tag_search = session.query(Tags).filter_by(tag_name=tag).first()
+                if not tag_search:
+                    session.add(Tags(tag_name=tag, json_dump=json.dumps({"cursor" : "dummy", "gfycats" : [gfycat] , "tag" : tag , "tagText": tag})))
+                    session.commit()
                     break
-    
+    @property
+    def tags(self):
+        return {"cursor": "dummy", "tags": [json.loads(result.json_dump) for result in session.query(Tags).all()]}
+
     def search_gifs(self, search_text):
-        return {"cursor": "dummy", "gfycats": [gfycat for gfycat in self.images_metadata["gfycats"] if any(search_text in text for text in gfycat["tags"]) or search_text in gfycat["title"]]}
+        tag_query = sqlalchemy.select([
+            images_table.c.json_dump,
+        ]).filter(images_table.c.tag_names.contains(search_text))
+
+        tag_result = [json.loads(result[0]) for result in engine.execute(tag_query).fetchall()]
+
+        title_query = sqlalchemy.select([
+            images_table.c.json_dump,
+        ]).filter(images_table.c.image_title.contains(search_text))
+
+        title_result = [json.loads(result[0]) for result in engine.execute(title_query).fetchall()]
+
+        return {"cursor": "dummy", "gfycats":[*tag_result, *title_result]}
 
     @staticmethod
     def get_image_file_data(image_path):

@@ -9,9 +9,10 @@ from consts import *
 
 IMAGES_PATH = "categories"
 
-app = Flask("Mock GIFS")
+app = Flask("GIFS Server")
 
 extractor = ImageExtractor(images_path=IMAGES_PATH, images_url_base=f"{BASE_URL}{ROUTE_IMAGES}")
+
 
 @app.route('/v1/oauth/token', methods=['OPTIONS'])
 def oauth():
@@ -34,7 +35,9 @@ def compose_response(response_content):
 
 @app.route('/v1/reactions/populated', methods=['OPTIONS', 'GET'])
 def categories():
-    return compose_response(extractor.categories_metadata)
+    if "tagName" in request.args.keys():
+        return compose_response(extractor.search_gifs(request.args.get("tagName")))
+    return compose_response(extractor.tags)
 
 
 @app.route('/v1/gfycats/search', methods=['OPTIONS', 'GET'])
